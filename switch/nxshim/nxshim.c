@@ -324,5 +324,10 @@ void nxshim_rumble(bool handheld, u32 styles, float low, float high) {
 
 // BSD sockets and DNS (libnx's bsd and sfdnsres services), for the game's HTTPS requests.
 int nxshim_net_init(void) {
-    return R_SUCCEEDED(socketInitializeDefault()) ? 0 : -1;
+    SocketInitConfig config = *socketGetDefaultInitConfig();
+    // libnx serves each blocking socket call on its own BSD session and defaults to 3. Long
+    // blocking calls (the multiplayer reader, skin downloads, server pings) can take them all, and
+    // then a send waits for a free session: the game freezes and the server drops the player.
+    config.num_bsd_sessions = 12;
+    return R_SUCCEEDED(socketInitialize(&config)) ? 0 : -1;
 }
