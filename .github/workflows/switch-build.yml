@@ -3,6 +3,8 @@ name: switch-build
 # Manual build of the Nintendo Switch port: NVK (Vulkan driver), then horizon.elf, then an
 # exefs override (main + main.npdm) that Atmosphere loads from the SD card. No prod.keys needed.
 on:
+  push:
+    branches: [codex/oled-audio]
   workflow_dispatch:
 
 permissions:
