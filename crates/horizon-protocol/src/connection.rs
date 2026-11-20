@@ -107,13 +107,14 @@ impl Write for Pipe {
 
 /// What a connection runs over.
 enum Stream {
-    Tcp(TcpStream),
+    // Shared, never `dup`ed: libnx sockets have no dup (try_clone fails with EBADF there).
+    Tcp(Arc<TcpStream>),
     Memory(Pipe),
 }
 impl Stream {
     fn try_clone(&self) -> std::io::Result<Self> {
         Ok(match self {
-            Self::Tcp(s) => Self::Tcp(s.try_clone()?),
+            Self::Tcp(s) => Self::Tcp(Arc::clone(s)),
             Self::Memory(p) => Self::Memory(p.try_clone()),
         })
     }
@@ -138,7 +139,10 @@ impl Stream {
 impl Read for Stream {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            Self::Tcp(s) => s.read(out),
+            Self::Tcp(s) => {
+                let mut socket: &TcpStream = s;
+                socket.read(out)
+            }
             Self::Memory(p) => p.read(out),
         }
     }
@@ -146,13 +150,19 @@ impl Read for Stream {
 impl Write for Stream {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
         match self {
-            Self::Tcp(s) => s.write(data),
+            Self::Tcp(s) => {
+                let mut socket: &TcpStream = s;
+                socket.write(data)
+            }
             Self::Memory(p) => p.write(data),
         }
     }
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Self::Tcp(s) => s.flush(),
+            Self::Tcp(s) => {
+                let mut socket: &TcpStream = s;
+                socket.flush()
+            }
             Self::Memory(p) => p.flush(),
         }
     }
@@ -222,7 +232,7 @@ impl Connection {
     }
     pub fn from_stream(stream: TcpStream) -> Result<Self> {
         stream.set_nodelay(true)?;
-        Self::over(Stream::Tcp(stream))
+        Self::over(Stream::Tcp(Arc::new(stream)))
     }
     /// A connection over one end of an in-memory [`Pipe`].
     pub fn local(pipe: Pipe) -> Self {
