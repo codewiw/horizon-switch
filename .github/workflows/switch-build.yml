@@ -1,0 +1,70 @@
+name: switch-build
+
+# Manual build of the Nintendo Switch port: NVK (Vulkan driver), then horizon.elf, then an
+# exefs override (main + main.npdm) that Atmosphere loads from the SD card. No prod.keys needed.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nvk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache NVK archive
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: switch/build/nvk/lib/libvulkan_bh.a
+          key: nvk-${{ hashFiles('switch/scripts/build-nvk.sh') }}
+      - name: Free disk space
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build NVK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: switch/scripts/build-nvk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvk
+          path: switch/build/nvk/lib/libvulkan_bh.a
+          if-no-files-found: error
+
+  build:
+    needs: nvk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nvk
+          path: switch/build/nvk/lib
+      - name: Install devkitPro libraries and host tools
+        run: |
+          dkp-pacman -Syu --noconfirm switch-mesa switch-libexpat switch-zlib switch-zstd switch-tools
+          apt-get update && apt-get install -y --no-install-recommends curl ca-certificates build-essential python3 patch pkg-config
+      - name: Install Rust nightly
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain nightly --component rust-src
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build horizon.elf
+        run: switch/scripts/build.sh
+      - name: Make the exefs override
+        run: |
+          . switch/scripts/env.sh
+          mkdir -p out/exefs
+          elf2nso switch/build/horizon.elf out/exefs/main
+          npdmtool switch/npdm.json out/exefs/main.npdm
+          cp switch/build/horizon.elf out/horizon.elf
+          sha256sum out/exefs/* out/horizon.elf | tee out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: horizon-switch
+          path: out
+          if-no-files-found: error
