@@ -232,6 +232,10 @@ impl Connection {
     }
     pub fn from_stream(stream: TcpStream) -> Result<Self> {
         stream.set_nodelay(true)?;
+        // The game ticks write packets on its own thread. When the link dies (Wi-Fi drop on
+        // the Switch) a blocking write otherwise stalls the whole game until TCP gives up,
+        // minutes later; a timeout turns that into an ordinary disconnect.
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(8)));
         Self::over(Stream::Tcp(Arc::new(stream)))
     }
     /// A connection over one end of an in-memory [`Pipe`].
