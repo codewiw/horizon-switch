@@ -12,6 +12,8 @@ use std::time::Duration;
 const CHANNELS: usize = 2;
 const FRAMES: usize = 1024;
 const SAMPLES: usize = FRAMES * CHANNELS;
+// Four queued buffers (~85 ms at 48 kHz) ride out render stalls; two (~43 ms) underran on the OLED.
+const BUFFERS: usize = 4;
 const PCM_INT16: i32 = 2;
 static OUTPUT_IN_USE: AtomicBool = AtomicBool::new(false);
 
@@ -127,7 +129,7 @@ fn play(
     ready: &mut Option<mpsc::SyncSender<io::Result<()>>>,
     mut render: impl FnMut(&mut [f32], usize, u32),
 ) -> io::Result<()> {
-    let mut pcm = Box::new([Samples([0; SAMPLES]), Samples([0; SAMPLES])]);
+    let mut pcm: Box<[Samples; BUFFERS]> = Box::new(std::array::from_fn(|_| Samples([0; SAMPLES])));
     let mut buffers = pcm.each_mut().map(|samples| AudioOutBuffer {
         next: ptr::null_mut(),
         buffer: samples.0.as_mut_ptr(),

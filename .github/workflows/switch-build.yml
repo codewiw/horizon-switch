@@ -49,8 +49,19 @@ jobs:
           path: switch/build/nvk/lib
       - name: Install devkitPro libraries and host tools
         run: |
-          dkp-pacman -Syu --noconfirm switch-mesa switch-libexpat switch-zlib switch-zstd switch-tools
+          dkp-pacman -Syu --noconfirm switch-mesa switch-libexpat switch-zlib switch-tools
           apt-get update && apt-get install -y --no-install-recommends curl ca-certificates build-essential python3 patch pkg-config
+          dkp-pacman -Ss zstd || true
+          if ! dkp-pacman -S --noconfirm switch-zstd && ! dkp-pacman -S --noconfirm switch-libzstd; then
+            echo "no devkitPro zstd package; building zstd 1.5.6 with devkitA64"
+            curl -sSfL https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz | tar xz
+            export PATH=/opt/devkitpro/devkitA64/bin:$PATH
+            make -C zstd-1.5.6/lib libzstd.a CC=aarch64-none-elf-gcc AR=aarch64-none-elf-ar \
+              CFLAGS="-O2 -march=armv8-a+crc+crypto -mtp=soft -fPIE -D__SWITCH__" ZSTD_LEGACY_SUPPORT=0
+            install -d /opt/devkitpro/portlibs/switch/lib /opt/devkitpro/portlibs/switch/include
+            cp zstd-1.5.6/lib/libzstd.a /opt/devkitpro/portlibs/switch/lib/
+            cp zstd-1.5.6/lib/zstd.h zstd-1.5.6/lib/zstd_errors.h /opt/devkitpro/portlibs/switch/include/
+          fi
       - name: Install Rust nightly
         run: |
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain nightly --component rust-src
